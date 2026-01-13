@@ -56,7 +56,7 @@ graph TD
 确保 MaxKB 服务已启动并配置好 DeepSeek 模型。
 
 目录结构检查
-
+···
 project
 ├── top_300_metrics/      # 数据文件夹
 ├── src/                  # 源代码
@@ -67,24 +67,25 @@ project
 ├── Dockerfile
 ├── nginx.conf
 └── README.md
-
+···
 启动服务
 只需一行命令即可启动所有服务：
-
+···
 docker-compose up -d --build
+···
 启动成功后，访问浏览器：
 Web 界面: http://localhost
 API 文档: http://localhost:8000/docs
 配置修改
 如果你的 MaxKB 地址或 Key 发生变化，请修改 docker-compose.yml 中的环境变量：
-code
+···
 Yaml
 environment:
       - MAXKB_HOST=你的MaxKB_IP
       - MAXKB_PORT=3001
       - MAXKB_API_KEY=你的Key
 ---
-
+···
 ### ⚠️ 最后的操作提示
 
 1.  **文件位置**：确保 `docker-compose.yml`, `Dockerfile`, `nginx.conf` 都在项目根目录。`src` 文件夹里放代码，`top_300_metrics` 文件夹里放数据。
