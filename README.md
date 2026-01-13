@@ -7,7 +7,7 @@
 ![Vue](https://img.shields.io/badge/Vue.js-3.0-green)
 ![AI](https://img.shields.io/badge/AI-DeepSeek%20V3.2-purple)
 
-OpenRank Insight 是一个为开发者、项目管理者和开源投资者打造的数据可视化与 AI 辅助决策工具。它摒弃了枯燥的 JSON 数据，通过赛博朋克风格的仪表盘和智能 AI 分析师，让开源项目的健康度、影响力和演进趋势一目了然。
+OpenRank Insight 是一个为开发者、项目管理者和开源投资者打造的数据可视化与 AI 辅助决策工具。它摒弃了枯燥的 JSON 数据，通过赛博朋克风格的仪表盘和智能AI分析师，让开源项目的健康度、影响力和演进趋势一目了然。
 
 ---
 
