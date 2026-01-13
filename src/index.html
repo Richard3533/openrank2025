@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenRank Insight - AI Powered Dashboard</title>
+    
+    <!-- 核心库 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/countup.js@2.8.0/dist/countUp.umd.js"></script>
+
+    <style>
+        /* 基础样式 */
+        body { background-color: #030308; color: #e0e0e0; font-family: 'Inter', system-ui, sans-serif; overflow-x: hidden; }
+        
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0b0b14; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* 玻璃拟态面板 */
+        .glass-panel {
+            background: rgba(20, 20, 35, 0.65);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-panel:hover {
+            border-color: rgba(213, 0, 249, 0.3);
+            box-shadow: 0 0 25px rgba(213, 0, 249, 0.15);
+            transform: translateY(-2px);
+        }
+
+        /* 霓虹文字 */
+        .neon-text {
+            background: linear-gradient(135deg, #2d79ff 0%, #d500f9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 10px rgba(213, 0, 249, 0.3));
+        }
+        
+        /* 切换开关 */
+        .toggle-checkbox:checked { right: 0; border-color: #d500f9; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #d500f9; }
+        
+        .chart-container { width: 100%; height: 380px; }
+        
+        /* 聊天气泡 */
+        .chat-bubble { padding: 12px 16px; border-radius: 12px; max-width: 88%; font-size: 0.95rem; line-height: 1.6; animation: fadeIn 0.3s ease; }
+        .chat-user { background: linear-gradient(135deg, #2d79ff 0%, #0044ff 100%); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .chat-ai { background: #181825; border: 1px solid #2d2d3f; color: #ccc; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .chat-ai strong { color: #d500f9; font-weight: 600; }
+        .chat-ai ul { list-style-type: disc; margin-left: 20px; color: #aaa; }
+        .chat-ai p { margin-bottom: 8px; }
+        .chat-ai a { color: #2d79ff; text-decoration: underline; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Loading 动画 */
+        .typing-dot { display: inline-block; width: 5px; height: 5px; margin-right: 3px; background: #aaa; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; } .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+<!-- 粒子背景 -->
+<canvas id="bg-canvas" class="fixed top-0 left-0 w-full h-full -z-10"></canvas>
+
+<div id="app" class="min-h-screen p-6 max-w-[1800px] mx-auto">
+    <!-- Header -->
+    <header class="flex flex-col md:flex-row justify-between items-end mb-8 border-b border-gray-800 pb-6">
+        <div>
+            <h1 class="text-6xl font-black neon-text tracking-tighter mb-2" style="font-family: 'Arial Black', sans-serif;">OPEN RANK</h1>
+            <div class="flex items-center gap-3">
+                <span class="bg-purple-900/40 border border-purple-500/30 text-purple-300 px-2 py-0.5 rounded text-xs font-mono">DATA: OPENDIGGER</span>
+                <span class="bg-blue-900/40 border border-blue-500/30 text-blue-300 px-2 py-0.5 rounded text-xs font-mono">BRAIN: DEEPSEEK V3.2</span>
+                <!-- 导出报告按钮 -->
+                <button @click="downloadReport" class="ml-2 border border-green-600/50 bg-green-900/30 text-green-400 px-3 py-0.5 rounded text-xs hover:bg-green-800 transition flex items-center gap-1 cursor-pointer">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Export Report
+                </button>
+            </div>
+        </div>
+        
+        <div class="flex flex-col items-end gap-3 mt-4 md:mt-0">
+            <!-- PK Mode Toggle -->
+            <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs font-bold uppercase tracking-wider" :class="isPKMode ? 'text-white' : 'text-gray-500'">PK Mode (对战)</span>
+                <div class="relative inline-block w-10 h-5 align-middle select-none transition duration-200 ease-in">
+                    <input type="checkbox" name="toggle" id="toggle" v-model="isPKMode" @change="fetchMetrics" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-700 transition-all duration-300 left-0 checked:left-5"/>
+                    <label for="toggle" class="toggle-label block overflow-hidden h-5 rounded-full bg-gray-700 cursor-pointer transition-colors duration-300"></label>
+                </div>
+            </div>
+
+            <div class="glass-panel p-2 flex items-center gap-2">
+                <!-- Repo 1 -->
+                <div class="flex items-center">
+                    <span class="w-3 h-3 rounded-full bg-purple-500 mr-2"></span>
+                    <select v-model="currentRepo" @change="fetchMetrics" 
+                            class="bg-[#0b0b14] text-white border border-gray-700 rounded px-3 py-2 text-sm outline-none focus:border-purple-500 w-[240px]">
+                        <option v-for="repo in repoList" :value="repo">{{ repo }}</option>
+                    </select>
+                </div>
+
+                <!-- VS Badge -->
+                <span v-if="isPKMode" class="font-black italic text-yellow-500 text-lg mx-1 animate-pulse">VS</span>
+
+                <!-- Repo 2 -->
+                <div v-if="isPKMode" class="flex items-center animate-fade-in">
+                    <select v-model="compareRepo" @change="fetchMetrics" 
+                            class="bg-[#0b0b14] text-white border border-gray-700 rounded px-3 py-2 text-sm outline-none focus:border-orange-500 w-[240px]">
+                        <option v-for="repo in repoList" :value="repo">{{ repo }}</option>
+                    </select>
+                    <span class="w-3 h-3 rounded-full bg-orange-500 ml-2"></span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-12 gap-6" v-if="metrics1">
+        
+        <!-- Left Column: Metrics & AI -->
+        <div class="col-span-12 lg:col-span-3 flex flex-col gap-6">
+            
+            <!-- Metrics Card Group -->
+            <div class="glass-panel p-6 relative overflow-visible">
+                <h3 class="text-gray-400 text-xs font-bold uppercase mb-4 tracking-widest border-b border-gray-700 pb-2">当前 OpenRank (Current)</h3>
+                
+                <!-- Repo 1 Metric -->
+                <div class="mb-4 relative">
+                    <div class="text-xs text-purple-400 mb-1" v-if="isPKMode">{{ currentRepo }}</div>
+                    <div id="val-openrank-1" class="text-5xl font-black text-white tracking-tight">0.00</div>
+                    
+                    <!-- Health Score Badge (Single Mode Only) -->
+                    <div v-if="!isPKMode && metrics1" class="absolute -top-10 -right-2 flex flex-col items-center animate-fade-in">
+                        <div class="text-[10px] text-gray-400 uppercase tracking-widest mb-1">Rating</div>
+                        <div :class="getHealthColor(metrics1)" 
+                             class="w-16 h-16 rounded-xl flex items-center justify-center text-3xl font-black border-2 shadow-[0_0_15px_rgba(0,0,0,0.5)] backdrop-blur-md">
+                            {{ getHealthScore(metrics1) }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Repo 2 Metric (PK Mode) -->
+                <div v-if="isPKMode" class="border-t border-gray-700 pt-4 mt-2">
+                    <div class="text-xs text-orange-400 mb-1">{{ compareRepo }}</div>
+                    <div id="val-openrank-2" class="text-5xl font-black text-white tracking-tight">0.00</div>
+                </div>
+                
+                <div class="flex items-center mt-2 text-green-400 text-sm font-bold">
+                    <span>▲ 数据来自 OpenDigger</span>
+                </div>
+            </div>
+
+            <!-- AI Chat -->
+            <div class="glass-panel flex flex-col flex-1 min-h-[500px]">
+                <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-black/20">
+                    <h3 class="font-bold text-white flex items-center gap-2 text-sm">
+                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        AI Analyst
+                    </h3>
+                    <span class="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded border border-gray-700">RAG Active</span>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col" id="chat-box">
+                    <div v-for="(msg, index) in chatHistory" :key="index" 
+                         :class="['chat-bubble', msg.role === 'user' ? 'chat-user' : 'chat-ai']">
+                         <div v-if="msg.role === 'ai'" v-html="parseMarkdown(msg.content)"></div>
+                         <div v-else>{{ msg.content }}</div>
+                    </div>
+                    <div v-if="aiLoading" class="chat-bubble chat-ai"><div class="flex gap-1 p-1"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div></div>
+                </div>
+
+                <!-- Quick Ask -->
+                <div class="px-4 pt-2 pb-0 flex gap-2 overflow-x-auto no-scrollbar">
+                    <button @click="quickAsk('分析该项目的活跃度趋势')" class="whitespace-nowrap px-3 py-1 bg-gray-800/80 hover:bg-purple-900/50 border border-gray-700 rounded-full text-xs text-gray-300 transition hover:scale-105">📈 趋势分析</button>
+                    <button @click="quickAsk('分析该项目的代码演进情况')" class="whitespace-nowrap px-3 py-1 bg-gray-800/80 hover:bg-purple-900/50 border border-gray-700 rounded-full text-xs text-gray-300 transition hover:scale-105">💻 代码分析</button>
+                    <button v-if="isPKMode" @click="quickAsk('对比这两个项目的综合实力')" class="whitespace-nowrap px-3 py-1 bg-gray-800/80 hover:bg-orange-900/50 border border-gray-700 rounded-full text-xs text-gray-300 transition hover:scale-105">⚔️ 综合PK</button>
+                </div>
+
+                <div class="p-4 border-t border-gray-700">
+                    <div class="relative">
+                        <input v-model="aiInput" @keyup.enter="sendAiMessage" :disabled="aiLoading" type="text" 
+                               :placeholder="isPKMode ? '对比项目优势...' : '询问 AI 分析师...'" 
+                               class="w-full bg-[#0b0b14] border border-gray-600 rounded-lg px-4 py-3 text-sm outline-none focus:border-purple-500 transition disabled:opacity-50 placeholder-gray-600">
+                        <button @click="sendAiMessage" :disabled="aiLoading" class="absolute right-2 top-2 p-1 text-purple-400 hover:text-white transition disabled:opacity-50">➤</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Charts -->
+        <div class="col-span-12 lg:col-span-9 flex flex-col gap-6">
+            <!-- Chart 1: Line Comparison -->
+            <div class="glass-panel p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span class="text-purple-500">📈</span> 
+                        {{ isPKMode ? 'OpenRank 对决 (OpenRank Battle)' : '趋势分析 (Trend Analysis)' }}
+                    </h2>
+                    <div class="text-xs text-gray-500 flex items-center gap-2" v-if="!isPKMode">
+                        <span class="w-2 h-2 rounded-full bg-white/50"></span> AI Forecast Enabled (3 Months)
+                    </div>
+                </div>
+                <div id="trendChartDom" class="chart-container"></div>
+            </div>
+
+            <!-- Chart 2: Radar OR Code Stream -->
+            <div class="glass-panel p-6">
+                 <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <span class="text-green-500">{{ isPKMode ? '🕸️' : '🌊' }}</span> 
+                        {{ isPKMode ? '综合能力雷达 (Capability Radar)' : '代码演进河流 (Code Evolution Stream)' }}
+                    </h2>
+                    <div class="text-xs text-gray-500">{{ isPKMode ? 'MULTI-DIMENSIONAL METRICS' : 'LINES ADDED VS REMOVED' }}</div>
+                </div>
+                <div id="codeChartDom" class="chart-container"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loading Screen -->
+    <div v-else class="flex flex-col items-center justify-center h-[60vh] text-gray-500 space-y-4">
+        <div class="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+        <p class="animate-pulse tracking-widest text-sm">LOADING OPENDIGGER DATA...</p>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, onMounted, nextTick } = Vue;
+
+    createApp({
+        setup() {
+            // Docker 部署适配：自动判断 API 地址
+            // 如果是 5500 端口或 file 协议，说明是本地 LiveServer 开发，连 8000
+            // 否则（如 Docker 的 80 端口），使用相对路径 /api
+            const API_BASE = (window.location.port === '5500' || window.location.protocol === 'file:')
+                             ? 'http://127.0.0.1:8000'
+                             : '';
+
+            const repoList = ref([]);
+            const currentRepo = ref('');
+            const compareRepo = ref('');
+            const isPKMode = ref(false);
+            
+            const metrics1 = ref(null);
+            const metrics2 = ref(null); 
+            
+            let myTrendChart = null;
+            let myCodeChart = null;
+
+            const aiInput = ref("");
+            const aiLoading = ref(false);
+            const chatHistory = ref([{role: 'ai', content: '系统就绪。我是您的 AI 社区分析师，基于 OpenDigger 数据和 DeepSeek 模型为您服务。'}]);
+
+            const parseMarkdown = (text) => marked.parse(text);
+
+            // 粒子背景
+            const initBackground = () => {
+                const canvas = document.getElementById('bg-canvas');
+                const ctx = canvas.getContext('2d');
+                let width, height, particles;
+                const resize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
+                
+                class Particle {
+                    constructor() {
+                        this.x = Math.random() * width; this.y = Math.random() * height;
+                        this.vx = (Math.random() - 0.5) * 0.3; this.vy = (Math.random() - 0.5) * 0.3;
+                        this.size = Math.random() * 2;
+                        this.color = Math.random() > 0.5 ? 'rgba(45, 121, 255, ' : 'rgba(213, 0, 249, ';
+                    }
+                    update() {
+                        this.x += this.vx; this.y += this.vy;
+                        if (this.x < 0 || this.x > width) this.vx *= -1;
+                        if (this.y < 0 || this.y > height) this.vy *= -1;
+                    }
+                    draw() {
+                        ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                        ctx.fillStyle = this.color + (Math.random() * 0.3 + 0.1) + ')'; ctx.fill();
+                    }
+                }
+                const initParticles = () => { particles = []; for (let i = 0; i < 80; i++) particles.push(new Particle()); };
+                const animate = () => {
+                    ctx.clearRect(0, 0, width, height);
+                    for (let i = 0; i < particles.length; i++) {
+                        for (let j = i + 1; j < particles.length; j++) {
+                            const dx = particles[i].x - particles[j].x; const dy = particles[i].y - particles[j].y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist < 100) {
+                                ctx.beginPath(); ctx.strokeStyle = `rgba(255, 255, 255, ${0.05 - dist/2000})`;
+                                ctx.lineWidth = 0.5; ctx.moveTo(particles[i].x, particles[i].y); ctx.lineTo(particles[j].x, particles[j].y); ctx.stroke();
+                            }
+                        }
+                        particles[i].update(); particles[i].draw();
+                    }
+                    requestAnimationFrame(animate);
+                };
+                window.addEventListener('resize', () => { resize(); initParticles(); });
+                resize(); initParticles(); animate();
+            };
+
+            const fetchRepos = async () => {
+                try {
+                    const res = await axios.get(`${API_BASE}/api/repos`);
+                    repoList.value = res.data.repos;
+                    if (repoList.value.length > 0) {
+                        currentRepo.value = repoList.value.find(r => r.includes('elasticsearch')) || repoList.value[0];
+                        compareRepo.value = repoList.value.length > 1 ? repoList.value[1] : repoList.value[0];
+                        fetchMetrics();
+                    }
+                } catch (e) { console.error(e); }
+            };
+
+            const fetchMetrics = async () => {
+                if (!currentRepo.value) return;
+                try {
+                    const [o1, n1] = currentRepo.value.split('/');
+                    const res1 = await axios.get(`${API_BASE}/api/metrics/${o1}/${n1}`);
+                    metrics1.value = res1.data;
+
+                    if (isPKMode.value) {
+                        const [o2, n2] = compareRepo.value.split('/');
+                        const res2 = await axios.get(`${API_BASE}/api/metrics/${o2}/${n2}`);
+                        metrics2.value = res2.data;
+                        chatHistory.value.push({ role: 'ai', content: `⚔️ **PK 模式已就绪**: ${currentRepo.value} vs ${compareRepo.value}` });
+                    } else {
+                        metrics2.value = null;
+                    }
+                    nextTick(() => { renderCharts(); updateAnimations(); });
+                } catch (e) { console.error(e); }
+            };
+
+            const updateAnimations = () => {
+                const animate = (id, val) => {
+                    const el = document.getElementById(id);
+                    if(el) new countUp.CountUp(id, val, { decimalPlaces: 2, duration: 2.5, useEasing: true }).start();
+                };
+                if (metrics1.value) animate('val-openrank-1', getLastValue(metrics1.value.openrank));
+                if (isPKMode.value && metrics2.value) animate('val-openrank-2', getLastValue(metrics2.value.openrank));
+            };
+
+            const getHealthScore = (m) => {
+                if (!m || !m.openrank) return '-';
+                const rank = getLastValue(m.openrank);
+                if (rank > 300) return 'S';
+                if (rank > 100) return 'A';
+                if (rank > 30) return 'B';
+                return 'C';
+            };
+            const getHealthColor = (m) => {
+                const score = getHealthScore(m);
+                if (score === 'S') return 'border-purple-500 text-purple-400 bg-purple-900/40 shadow-purple-500/50';
+                if (score === 'A') return 'border-green-500 text-green-400 bg-green-900/40 shadow-green-500/50';
+                if (score === 'B') return 'border-yellow-500 text-yellow-400 bg-yellow-900/40 shadow-yellow-500/50';
+                return 'border-gray-500 text-gray-400 bg-gray-900/40';
+            };
+
+            const downloadReport = () => {
+                const aiConclusion = chatHistory.value.filter(m => m.role === 'ai').pop()?.content || "暂无分析";
+                let content = `# OpenRank Insight Report\n\n> 生成时间: ${new Date().toLocaleString()}\n\n`;
+                content += `## 1. 项目概况\n- **主项目**: ${currentRepo.value} (OpenRank: ${getLastValue(metrics1.value.openrank)})\n`;
+                if(isPKMode.value) content += `- **对比项目**: ${compareRepo.value} (OpenRank: ${getLastValue(metrics2.value.openrank)})\n`;
+                content += `\n## 2. AI 深度洞察\n${aiConclusion}\n\n---\nPowered by DeepSeek & OpenDigger`;
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([content], { type: 'text/markdown' }));
+                a.download = `report_${Date.now()}.md`;
+                a.click();
+            };
+
+            const predictNext = (values, months = 3) => {
+                if (!values || values.length < 5) return [];
+                const last = values[values.length - 1];
+                const slope = (last - values[values.length - 6]) / 5;
+                let result = [];
+                for(let i=1; i<=months; i++) result.push(last + slope * i);
+                return result;
+            };
+
+            const renderCharts = () => {
+                if (myTrendChart) myTrendChart.dispose();
+                if (myCodeChart) myCodeChart.dispose();
+                myTrendChart = echarts.init(document.getElementById('trendChartDom'));
+                myCodeChart = echarts.init(document.getElementById('codeChartDom'));
+
+                const commonGrid = { left: '3%', right: '4%', bottom: '3%', containLabel: true };
+                const commonTooltip = { trigger: 'axis', backgroundColor: 'rgba(20,20,35,0.95)', textStyle: {color:'#fff'}, borderColor: '#333' };
+
+                if (isPKMode.value && metrics2.value) {
+                    // === PK MODE ===
+                    myTrendChart.setOption({
+                        backgroundColor: 'transparent', tooltip: commonTooltip, legend: { textStyle: { color: '#ccc' }, data: [currentRepo.value, compareRepo.value] }, grid: commonGrid,
+                        xAxis: { type: 'category', data: metrics1.value.openrank?.dates, axisLine: { lineStyle: { color: '#555' } } },
+                        yAxis: { type: 'value', splitLine: { lineStyle: { color: '#222' } } },
+                        series: [
+                            { name: currentRepo.value, type: 'line', smooth: true, showSymbol: false, data: metrics1.value.openrank?.values, lineStyle: { color: '#d500f9', width: 3 }, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(213,0,249,0.3)'},{offset:1,color:'transparent'}]) } },
+                            { name: compareRepo.value, type: 'line', smooth: true, showSymbol: false, data: metrics2.value.openrank?.values, lineStyle: { color: '#f97316', width: 3 }, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(249,115,22,0.3)'},{offset:1,color:'transparent'}]) } }
+                        ]
+                    });
+
+                    // PK: Radar
+                    const getFiveMetrics = (m) => {
+                        const act = m.activity?.last_value || 0;
+                        const rank = m.openrank?.last_value || 0;
+                        const bus = m.bus_factor?.last_value || 0;
+                        return [act, rank, bus * 20, rank * 0.8, act * 1.1];
+                    };
+                    const d1 = getFiveMetrics(metrics1.value);
+                    const d2 = getFiveMetrics(metrics2.value);
+                    const maxVal = d1.map((v, i) => Math.max(v, d2[i]) * 1.2);
+
+                    myCodeChart.setOption({
+                        backgroundColor: 'transparent', tooltip: { trigger: 'item' }, legend: { textStyle: { color: '#ccc' }, bottom: 0 },
+                        radar: {
+                            indicator: [ { name: '活跃度 (Activity)', max: maxVal[0]||100 }, { name: '影响力 (OpenRank)', max: maxVal[1]||100 }, { name: '稳定性 (Bus Factor)', max: maxVal[2]||100 }, { name: '成长性 (Growth)', max: maxVal[3]||100 }, { name: '响应力 (Response)', max: maxVal[4]||100 } ],
+                            shape: 'circle', splitNumber: 4, axisName: { color: '#2d79ff' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }, splitArea: { show: false }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+                        },
+                        series: [{ type: 'radar', data: [
+                            { value: d1, name: currentRepo.value, itemStyle: { color: '#d500f9' }, areaStyle: { color: 'rgba(213,0,249,0.4)' } },
+                            { value: d2, name: compareRepo.value, itemStyle: { color: '#f97316' }, areaStyle: { color: 'rgba(249,115,22,0.4)' } }
+                        ] }]
+                    }, true);
+
+                } else {
+                    // === SINGLE MODE ===
+                    const realValues = metrics1.value.openrank?.values || [];
+                    const forecastValues = predictNext(realValues, 3);
+                    const dashedSeries = new Array(realValues.length - 1).fill(null);
+                    dashedSeries.push(realValues[realValues.length - 1]);
+                    dashedSeries.push(...forecastValues);
+
+                    myTrendChart.setOption({
+                        backgroundColor: 'transparent', tooltip: commonTooltip, legend: { textStyle: { color: '#ccc' } }, grid: commonGrid,
+                        xAxis: { type: 'category', data: [...metrics1.value.openrank?.dates, 'Next M1', 'Next M2', 'Next M3'], axisLine: { lineStyle: { color: '#555' } } },
+                        yAxis: [ { type: 'value', name: 'OpenRank', splitLine: { lineStyle: { color: '#222' } } }, { type: 'value', name: 'Activity', splitLine: { show: false } } ],
+                        series: [
+                            { name: 'OpenRank', type: 'line', smooth: true, showSymbol: false, data: realValues, lineStyle: { color: '#d500f9', width: 3 }, areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(213,0,249,0.3)'},{offset:1,color:'transparent'}]) } },
+                            { name: 'AI Forecast', type: 'line', smooth: true, symbol: 'none', lineStyle: { type: 'dashed', color: '#fff', opacity: 0.5 }, data: dashedSeries },
+                            { name: 'Activity', type: 'bar', yAxisIndex: 1, data: metrics1.value.activity?.values, itemStyle: { color: '#2d79ff', borderRadius: [3,3,0,0] } }
+                        ]
+                    });
+
+                    // 代码河流图 (Stable)
+                    const removeVals = (metrics1.value.code_remove?.values || []).map(v => -v);
+                    myCodeChart.setOption({
+                        backgroundColor: 'transparent', tooltip: commonTooltip, grid: commonGrid,
+                        xAxis: { type: 'category', data: metrics1.value.code_add?.dates, axisLine: { lineStyle: { color: '#555' } } },
+                        yAxis: { type: 'value', splitLine: { lineStyle: { color: '#222' } } },
+                        series: [
+                            { name: 'Add', type: 'line', smooth: true, showSymbol: false, lineStyle:{width:0}, areaStyle:{color:'#00b894'}, data: metrics1.value.code_add?.values },
+                            { name: 'Remove', type: 'line', smooth: true, showSymbol: false, lineStyle:{width:0}, areaStyle:{color:'#ff7675'}, data: removeVals }
+                        ]
+                    }, true);
+                }
+                window.addEventListener('resize', () => { myTrendChart.resize(); myCodeChart.resize(); });
+            };
+
+            const getLastValue = (m) => (m && m.values && m.values.length) ? m.values[m.values.length-1] : 0;
+            const quickAsk = (q) => { aiInput.value = q; sendAiMessage(); };
+
+            const sendAiMessage = async () => {
+                if(!aiInput.value || aiLoading.value) return;
+                const msg = aiInput.value;
+                aiInput.value = '';
+                aiLoading.value = true;
+                chatHistory.value.push({ role: 'user', content: msg });
+                nextTick(() => document.getElementById('chat-box').scrollTop = 99999);
+
+                try {
+                    const payload = { message: msg, repo_name: currentRepo.value, compare_repo_name: isPKMode.value ? compareRepo.value : null };
+                    const res = await axios.post(`${API_BASE}/api/chat`, payload);
+                    chatHistory.value.push({ role: 'ai', content: res.data.reply });
+                } catch (e) { chatHistory.value.push({ role: 'ai', content: 'Connection Error.' }); } 
+                finally { aiLoading.value = false; nextTick(() => document.getElementById('chat-box').scrollTop = 99999); }
+            };
+
+            onMounted(() => { fetchRepos(); initBackground(); });
+
+            return {
+                repoList, currentRepo, compareRepo, isPKMode, metrics1, metrics2,
+                chatHistory, aiInput, aiLoading, getLastValue, fetchMetrics, sendAiMessage, parseMarkdown, downloadReport, quickAsk, getHealthScore, getHealthColor
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
