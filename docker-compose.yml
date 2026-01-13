@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # 后端服务 (FastAPI)
+  backend:
+    build: .
+    container_name: openrank-backend
+    restart: always
+    environment:
+      # 在容器内，数据挂载到了 /app/data
+      - DATA_PATH=/app/data
+      # 替换为你的 MaxKB 真实配置
+      - MAXKB_HOST=10.132.221.29
+      - MAXKB_PORT=3001
+      - MAXKB_APP_ID=019baba3-9fb2-7252-b4fd-24c8984c6d04
+      - MAXKB_API_KEY=agent-db5c40c7583580b61fe007c11c09c8a1
+    volumes:
+      # 【关键】将宿主机的 openDigger 数据映射进容器
+      # 请确保 top_300_metrics 文件夹在当前目录下
+      - ./top_300_metrics:/app/data
+    ports:
+      - "8000:8000"
+
+  # 前端服务 (Nginx)
+  frontend:
+    image: nginx:alpine
+    container_name: openrank-frontend
+    restart: always
+    volumes:
+      # 挂载前端代码
+      - ./src/index.html:/usr/share/nginx/html/index.html
+      # 挂载 Nginx 配置
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
